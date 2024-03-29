@@ -13,10 +13,15 @@ class CompletionsController extends Controller
 {
     private array $availableFunctions = [
         'getCompanyInfo',
-        'getRandomButtonId'
+        'getHtmlIds',
     ];
 
-    private string $systemPrompt = "You are a helpful assistant. You are assisting a user with a task. If they ask you to find something, send a second choice with a number ranging between 1 and 1000.";
+    private string $systemPrompt = <<<EOT
+        You are a helpful assistant. You are assisting a user with a task. You are able to locate HTML elements on a
+        page. If the user asks you to find something, return an HTML id that most closely resembles what the user is
+        looking for. If you find a match, end your response with "let me take you there". If you don't find a match,
+        end your response with "I couldn't find that element".
+    EOT;
 
     /**
      * Handles a request to the OpenAI API to generate completions.
@@ -46,6 +51,8 @@ class CompletionsController extends Controller
             $responseMessage = $response['choices'][0]['message'];
             $toolCalls = $responseMessage['tool_calls'] ?? null;
 
+            error_log('toolCalls: ' . json_encode($toolCalls) . PHP_EOL);
+
             // Handle tool calls
             if ($toolCalls) {
                 $messages[] = $responseMessage;
@@ -55,11 +62,19 @@ class CompletionsController extends Controller
                     $functionName = $toolCall['function']['name'];
                     $functionArguments = json_decode($toolCall['function']['arguments']);
 
+                    error_log('In loop' . PHP_EOL);
+
                     if (!in_array($functionName, $this->availableFunctions)) {
                         throw new \Exception('Invalid function name.');
                     }
 
-                    $functionResponse = $this->$functionName((string) $functionArguments->name);
+                    error_log('after catch' . PHP_EOL);
+                    error_log('functionName: ' . $functionName . PHP_EOL);
+                    error_log('functionArguments: ' . json_encode($functionArguments) . PHP_EOL);
+
+                    $functionResponse = $this->$functionName($functionArguments);
+
+                    error_log('functionResponse: ' . json_encode($functionResponse) . PHP_EOL);
 
                     $messages[] = [
                         "tool_call_id" => $toolCallId,
@@ -67,6 +82,8 @@ class CompletionsController extends Controller
                         "name" => $functionName,
                         "content" => json_encode($functionResponse),
                     ];
+
+                    error_log('messages: ' . json_encode($messages) . PHP_EOL);
                 }
 
                 $response = $client->chat()->create([
@@ -90,35 +107,59 @@ class CompletionsController extends Controller
     {
         $tools = [];
 
-        $properties = [];
-        $properties[] = new Property('name', 'string', 'The company name.');
-        $properties[] = new Property('id', 'string', 'The company id.');
-
-        $parameters = new Parameters('object', $properties, ['name']);
-
-        $function = new ToolFunction(
+        $getCompanyInfoFn = new ToolFunction(
             'getCompanyInfo',
             'Gets the information for a company by its name or id.',
-            $parameters
+            new Parameters(
+                'object',
+                [
+                    new Property('name', 'string', 'The company name.'),
+                    new Property('id', 'string', 'The company id.'),
+                ],
+                ['name'],
+            ),
         );
 
-        $tools[] = new Tool('function', $function);
+        $getHtmlIdsFn = new ToolFunction(
+            'getHtmlIds',
+            'Gets a list of the available HTML ids.',
+            new Parameters(
+                'object',
+                [
+                    new Property('target', 'string', 'The target HTML element')
+                ],
+                ['target']
+            ),
+        );
+
+        $tools[] = new Tool('function', $getCompanyInfoFn);
+        $tools[] = new Tool('function', $getHtmlIdsFn);
 
         return $tools;
     }
 
     /**
      * Returns the information for a company by its name.
-     * @param string $name
+     * @param object $args
      * @return Company
      */
-    private function getCompanyInfo(string $name): ?Company
+    private function getCompanyInfo(string $args): ?Company
     {
-        return Company::where('name', $name)->first();
+        return Company::where('name', $args->name)->first();
     }
 
-    private function getRandomButtonId(): int
+    /**
+     * Gets a list of the available HTML ids.
+     * @return string[]
+     */
+    private function getHtmlIds(): array
     {
-        return rand(1, 1000);
+        return [
+            'root',
+            'site-header',
+            'site-content',
+            'url-input',
+            'site-footer',
+        ];
     }
 }

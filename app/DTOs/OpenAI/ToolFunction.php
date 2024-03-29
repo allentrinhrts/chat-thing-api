@@ -10,10 +10,10 @@ class ToolFunction
     /** @var string $description */
     private string $description;
 
-    /** @var Parameters $parameters */
-    private Parameters $parameters;
+    /** @var ?Parameters $parameters */
+    private ?Parameters $parameters;
 
-    function __construct(string $name, string $description, Parameters $parameters)
+    function __construct(string $name, string $description, Parameters $parameters = null)
     {
         $this->name = $name;
         $this->description = $description;
@@ -30,7 +30,7 @@ class ToolFunction
         return $this->description;
     }
 
-    public function getParameters(): Parameters
+    public function getParameters(): ?Parameters
     {
         return $this->parameters;
     }
